@@ -7,24 +7,18 @@
 
 static MAX30105 particleSensor;
 
-static uint32_t irBuffer[100];
-static uint32_t redBuffer[100];
-static int bufferIndex = 0;
-static unsigned long lastCalcTime = 0;
-static bool sensorReady = false;
-
-bool setupPulseSensor() {
-    Wire.begin(8, 9);
+PulseSensor::PulseSensor(const uint8_t sdaPin,const uint8_t sclPin) {
+    Wire.begin(sdaPin, sclPin);
     Serial.println("I2C started");
 
     if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) {
         Serial.println("Sensor not found");
         sensorReady = false;
-        return false;
+        return;
     }
 
     particleSensor.setup(
-        60,   // brightness
+        10,   // brightness
         4,    // sample avg
         2,    // red + IR
         100,  // sample rate
@@ -34,25 +28,24 @@ bool setupPulseSensor() {
 
     sensorReady = true;
     Serial.println("MAX30102 ready...");
-    return true;
 }
 
-bool isSensorReady() {
+bool PulseSensor::isReady() const {
     return sensorReady;
 }
 
-void collectSample() {
+void PulseSensor::collectSample() {
     if (particleSensor.available()) {
         redBuffer[bufferIndex] = particleSensor.getRed();
         irBuffer[bufferIndex]  = particleSensor.getIR();
         particleSensor.nextSample();
         bufferIndex++;
 
-        if (bufferIndex >= 100) {
-            bufferIndex = 75;
-            for (int i = 0; i < 75; i++) {
-                redBuffer[i] = redBuffer[i + 25];
-                irBuffer[i]  = irBuffer[i + 25];
+        if (bufferIndex >= BUFFER_SIZE) {
+            bufferIndex = KEEP_COUNT;
+            for (int i = 0; i < KEEP_COUNT; i++) {
+                redBuffer[i] = redBuffer[i + (BUFFER_SIZE - KEEP_COUNT)];
+                irBuffer[i]  = irBuffer[i + (BUFFER_SIZE - KEEP_COUNT)];
             }
         }
     } else {
@@ -60,8 +53,8 @@ void collectSample() {
     }
 }
 
-bool calculateIfReady(PulseData& data) {
-    if (millis() - lastCalcTime < 1000 || bufferIndex < 75) {
+bool PulseSensor::calculateIfReady(PulseData& data) {
+    if (millis() - lastCalcTime < 1000 || bufferIndex < KEEP_COUNT) {
         return false;
     }
 
@@ -69,7 +62,7 @@ bool calculateIfReady(PulseData& data) {
 
     maxim_heart_rate_and_oxygen_saturation(
         irBuffer,
-        100,
+        BUFFER_SIZE,
         redBuffer,
         &data.spo2,
         &data.validSPO2,

@@ -1,21 +1,29 @@
 #include <Arduino.h>
-#include "ble_manager.h"
+#include "ble/ble_manager.h"
 #include "pulse_sensor.h"
+#include "pulse_payload.h"
+
+#define BAUD_RATE 115200
+#define DELAY 2000
+#define DEVICE_NAME "Smart Bracelet Mawadah"
+
+BLEManager* ble = nullptr;
+PulseSensor* sensor = nullptr;
 
 void setup() {
-    Serial.begin(115200);
-    delay(2000);
+    Serial.begin(BAUD_RATE);
+    delay(DELAY);
 
     Serial.println("Starting...");
 
-    setupBLE();
-    setupPulseSensor();
+    ble = new BLEManager(DEVICE_NAME);
+    sensor = new PulseSensor(8, 9);
 
     Serial.println("System ready...");
 }
 
 void loop() {
-    if (!isSensorReady()) {
+    if (!sensor->isReady()) {
         static unsigned long lastMsg = 0;
         if (millis() - lastMsg > 2000) {
             lastMsg = millis();
@@ -24,16 +32,12 @@ void loop() {
         return;
     }
 
-    collectSample();
+    sensor->collectSample();
 
-    PulseData data;
-    if (calculateIfReady(data)) {
-        String payload = "{";
-        payload += "\"hr\":" + String(data.heartRate) + ",";
-        payload += "\"spo2\":" + String(data.spo2) + ",";
-        payload += "\"validHr\":" + String(data.validHeartRate) + ",";
-        payload += "\"validSpo2\":" + String(data.validSPO2);
-        payload += "}";
+    PulseData data{};
+    if (sensor->calculateIfReady(data)) {
+        const PulsePayload json(data);
+        const String payload = json.build();
 
         Serial.print("HR: ");
         Serial.print(data.heartRate);
@@ -42,7 +46,7 @@ void loop() {
         Serial.print(" | BLE payload: ");
         Serial.println(payload);
 
-        sendBLEPayload(payload.c_str());
+        ble->sendPayload(payload.c_str());
 
         delay(3500);
     }
